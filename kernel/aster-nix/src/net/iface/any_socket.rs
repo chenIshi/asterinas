@@ -28,7 +28,9 @@ impl AnyUnboundSocket {
         let raw_tcp_socket = {
             let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; RECV_BUF_LEN]);
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; SEND_BUF_LEN]);
-            RawTcpSocket::new(rx_buffer, tx_buffer)
+            let mut socket = RawTcpSocket::new(rx_buffer, tx_buffer);
+            socket.set_ack_delay(None);
+            socket
         };
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Tcp(raw_tcp_socket),
