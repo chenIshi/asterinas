@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{file_handle::FileLike, file_table::FdFlags},
     net::socket::{
-        ip::{DatagramSocket, StreamSocket},
+        ip::{DatagramSocket, RawSocket, StreamSocket},
         unix::UnixStreamSocket,
         vsock::VsockStreamSocket,
     },
@@ -38,7 +38,12 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
         ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
         (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM, _) => {
             Arc::new(VsockStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
-        }
+        },
+        (
+            CSocketAddrFamily::AF_INET,
+            SockType::SOCK_RAW,
+            Protocol::IPPROTO_ICMP,
+        ) => RawSocket::new(nonblocking) as Arc<dyn FileLike>,
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {

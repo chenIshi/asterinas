@@ -4,10 +4,15 @@ use crate::net::iface::{IpAddress, IpEndpoint, Ipv4Address};
 
 mod common;
 mod datagram;
+<<<<<<< HEAD
+=======
+mod raw;
+>>>>>>> e20dfeaa (Create entry in sock syscall with icmp raw sock)
 pub mod options;
 pub mod stream;
 
 pub use datagram::DatagramSocket;
+pub use raw::RawSocket;
 pub use stream::StreamSocket;
 
 /// A local endpoint, which indicates that the local endpoint is unspecified.
