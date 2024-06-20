@@ -36,6 +36,7 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
             SockType::SOCK_DGRAM,
             Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP,
         ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
+<<<<<<< HEAD
         (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM, _) => {
             Arc::new(VsockStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
         },
@@ -44,6 +45,11 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32) -> Result<SyscallRetur
             SockType::SOCK_RAW,
             Protocol::IPPROTO_ICMP,
         ) => RawSocket::new(nonblocking) as Arc<dyn FileLike>,
+=======
+        (CSocketAddrFamily::AF_INET, SockType::SOCK_RAW, Protocol::IPPROTO_ICMP) => {
+            RawSocket::new(nonblocking) as Arc<dyn FileLike>
+        }
+>>>>>>> fa69612d (Impl icmp for raw socket)
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {

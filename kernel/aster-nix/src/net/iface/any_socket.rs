@@ -3,6 +3,7 @@
 use super::{Iface, IpAddress, IpEndpoint};
 use crate::{events::Observer, prelude::*};
 
+pub type RawIcmpSocket = smoltcp::socket::icmp::Socket<'static>;
 pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
 pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
 
@@ -13,11 +14,13 @@ pub struct AnyUnboundSocket {
 
 #[allow(clippy::large_enum_variant)]
 pub(super) enum AnyRawSocket {
+    Icmp(RawIcmpSocket),
     Tcp(RawTcpSocket),
     Udp(RawUdpSocket),
 }
 
 pub(super) enum SocketFamily {
+    Icmp,
     Tcp,
     Udp,
 }
@@ -50,6 +53,25 @@ impl AnyUnboundSocket {
         };
         AnyUnboundSocket {
             socket_family: AnyRawSocket::Udp(raw_udp_socket),
+            observer,
+        }
+    }
+
+    pub fn new_icmp(observer: Weak<dyn Observer<()>>) -> Self {
+        let raw_icmp_socket = {
+            let metadata = smoltcp::socket::icmp::PacketMetadata::EMPTY;
+            let rx_buffer = smoltcp::socket::icmp::PacketBuffer::new(
+                vec![metadata; ICMP_METADATA_LEN],
+                vec![0u8; ICMP_RECV_PAYLOAD_LEN],
+            );
+            let tx_buffer = smoltcp::socket::icmp::PacketBuffer::new(
+                vec![metadata; ICMP_METADATA_LEN],
+                vec![0u8; ICMP_SEND_PAYLOAD_LEN],
+            );
+            RawIcmpSocket::new(rx_buffer, tx_buffer)
+        };
+        AnyUnboundSocket {
+            socket_family: AnyRawSocket::Icmp(raw_icmp_socket),
             observer,
         }
     }
@@ -146,6 +168,7 @@ impl AnyBoundSocket {
         match self.socket_family {
             SocketFamily::Tcp => self.raw_with(|socket: &mut RawTcpSocket| socket.close()),
             SocketFamily::Udp => self.raw_with(|socket: &mut RawUdpSocket| socket.close()),
+            SocketFamily::Icmp => {} // Nothing need to do since ICMP socket hold no states
         }
     }
 }
@@ -159,6 +182,11 @@ impl Drop for AnyBoundSocket {
         self.iface.common().remove_bound_socket(self.weak_ref());
     }
 }
+
+// For ICMP
+const ICMP_METADATA_LEN: usize = 256;
+const ICMP_SEND_PAYLOAD_LEN: usize = 65536;
+const ICMP_RECV_PAYLOAD_LEN: usize = 65536;
 
 // For TCP
 pub const RECV_BUF_LEN: usize = 65536;

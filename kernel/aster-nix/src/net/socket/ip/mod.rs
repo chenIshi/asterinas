@@ -5,10 +5,14 @@ use crate::net::iface::{IpAddress, IpEndpoint, Ipv4Address};
 mod common;
 mod datagram;
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 mod raw;
 >>>>>>> e20dfeaa (Create entry in sock syscall with icmp raw sock)
+=======
+>>>>>>> 6e9b991f (Impl icmp for raw socket)
 pub mod options;
+mod raw;
 pub mod stream;
 
 pub use datagram::DatagramSocket;

@@ -133,6 +133,11 @@ impl IfaceCommon {
                 SocketFamily::Udp,
                 observer,
             ),
+            (AnyRawSocket::Icmp(icmp_socket), observer) => (
+                self.sockets.lock_irq_disabled().add(icmp_socket),
+                SocketFamily::Icmp,
+                observer,
+            ),
         };
         let bound_socket = AnyBoundSocket::new(iface, handle, port, socket_family, observer);
         self.insert_bound_socket(&bound_socket).unwrap();

@@ -14,7 +14,8 @@ mod util;
 mod virtio;
 
 pub use any_socket::{
-    AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, RECV_BUF_LEN, SEND_BUF_LEN,
+    AnyBoundSocket, AnyUnboundSocket, RawIcmpSocket, RawTcpSocket, RawUdpSocket, RECV_BUF_LEN,
+    SEND_BUF_LEN,
 };
 pub use loopback::IfaceLoopback;
 pub use smoltcp::wire::{EthernetAddress, IpAddress, IpEndpoint, Ipv4Address};
