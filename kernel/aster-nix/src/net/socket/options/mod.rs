@@ -26,4 +26,5 @@ impl_socket_options!(
     pub struct Linger(LingerOption);
     pub struct KeepAlive(bool);
     pub struct NoCheck(bool);
+    pub struct Broadcast(u32);
 );

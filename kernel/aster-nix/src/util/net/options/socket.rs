@@ -6,7 +6,8 @@ use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        Error, KeepAlive, Linger, NoCheck, RcvTimeoOld, RecvBuf, ReuseAddr, ReusePort, SendBuf,
+        Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+        Broadcast, Error, KeepAlive, Linger, NoCheck, RcvTimeoOld, RecvBuf, ReuseAddr, ReusePort, SendBuf,
         SndTimeoOld, SocketOption, TimestampOld,
     },
     prelude::*,
@@ -59,6 +60,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::NO_CHECK => Ok(Box::new(NoCheck::new())),
+        CSocketOptionName::BROADCAST => Ok(Box::new(Broadcast::new())),
         _ => todo!(),
     }
 }
@@ -74,3 +76,4 @@ impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
 impl_raw_socket_option!(NoCheck);
+impl_raw_socket_option!(Broadcast);
