@@ -6,7 +6,6 @@ use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
         Broadcast, Error, KeepAlive, Linger, NoCheck, RcvTimeoOld, RecvBuf, ReuseAddr, ReusePort, SendBuf,
         SndTimeoOld, SocketOption, TimestampOld,
     },
