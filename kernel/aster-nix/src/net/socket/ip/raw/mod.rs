@@ -13,12 +13,16 @@ use crate::{
         iface::IpEndpoint,
         poll_ifaces,
         socket::{
-            util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr},
+            util::{
+                copy_message_from_user, copy_message_to_user, create_message_buffer,
+                send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader,
+            },
             Socket,
         },
     },
     prelude::*,
     process::signal::{Pollee, Poller},
+    util::IoVec,
 };
 
 mod bound;
@@ -117,29 +121,52 @@ impl RawSocket {
             (Inner::Bound(bound_raw), Ok(()))
         })
     }
-
-    fn try_recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    
+    fn try_recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, IpEndpoint)> {
         let inner = self.inner.read();
 
         let Inner::Bound(bound_raw) = inner.as_ref() else {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
         };
 
-        let (recv_bytes, remote_endpoint) = bound_raw.try_recvfrom(buf, flags)?;
-        bound_raw.update_io_events(&self.pollee);
-        Ok((recv_bytes, remote_endpoint.into()))
+        let received = bound_raw
+            .try_recv(buf, flags)
+            .map(|(recv_bytes, remote_endpoint)| {
+                bound_raw.update_io_events(&self.pollee);
+                (recv_bytes, remote_endpoint.into())
+            });
+        drop(inner);
+        poll_ifaces();
+
+        received
     }
 
-    fn try_sendto(&self, buf: &[u8], remote: &IpEndpoint, flags: SendRecvFlags) -> Result<usize> {
+    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, IpEndpoint)> {
+        if self.is_nonblocking() {
+            self.try_recv(buf, flags)
+        } else {
+            self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
+        }
+    }
+
+    fn try_send(&self, buf: &[u8], remote: &IpEndpoint, flags: SendRecvFlags) -> Result<usize> {
         let inner = self.inner.read();
 
         let Inner::Bound(bound_raw) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
+            return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
         };
 
-        let sent_bytes = bound_raw.try_sendto(buf, remote, flags)?;
-        bound_raw.update_io_events(&self.pollee);
-        Ok(sent_bytes)
+        let sent_bytes = bound_raw
+            .try_send(buf, remote, flags)
+            .map(|sent_bytes| {
+                bound_raw.update_io_events(&self.pollee);
+                sent_bytes
+            });
+        
+        drop(inner);
+        poll_ifaces();
+
+        sent_bytes
     }
 
     // TODO: Support timeout
@@ -177,14 +204,22 @@ impl FileLike for RawSocket {
     fn read(&self, buf: &mut [u8]) -> Result<usize> {
         // FIXME: respect flags
         let flags = SendRecvFlags::empty();
-        let (recv_len, _) = self.recvfrom(buf, flags)?;
-        Ok(recv_len)
+        self.recv(buf, flags).map(|(len, _)| len)
     }
 
     fn write(&self, buf: &[u8]) -> Result<usize> {
-        // FIXME: set correct flags
+        let remote = self.remote_endpoint().ok_or_else(|| {
+            Error::with_message(
+                Errno::EDESTADDRREQ,
+                "the destination address is not specified",
+            )
+        })?;
+
+        // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        self.sendto(buf, None, flags)
+
+        // TODO: Block if send buffer is full
+        self.try_send(buf, &remote, flags)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&Poller>) -> IoEvents {
@@ -249,7 +284,7 @@ impl Socket for RawSocket {
     fn addr(&self) -> Result<SocketAddr> {
         let inner = self.inner.read();
         match inner.as_ref() {
-            Inner::Unbound(unbound_raw) => Ok(UNSPECIFIED_LOCAL_ENDPOINT.into()),
+            Inner::Unbound(_) => Ok(UNSPECIFIED_LOCAL_ENDPOINT.into()),
             Inner::Bound(bound_raw) => Ok(bound_raw.local_endpoint().into()),
         }
     }
@@ -260,27 +295,41 @@ impl Socket for RawSocket {
             .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
     }
 
-    // FIXME: respect RecvFromFlags
-    fn recvfrom(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)> {
+        // TODO: Deal with flags
         debug_assert!(flags.is_all_supported());
 
-        poll_ifaces();
-        if self.is_nonblocking() {
-            self.try_recvfrom(buf, flags)
-        } else {
-            self.wait_events(IoEvents::IN, || self.try_recvfrom(buf, flags))
-        }
+        let mut buf = create_message_buffer(io_vecs);
+
+        let (received_bytes, peer_addr) = self.recv(&mut buf, flags)?;
+
+        let copied_bytes = {
+            let message = &buf[..received_bytes];
+            copy_message_to_user(io_vecs, message)
+        };
+
+        // TODO: Receive control message
+
+        let message_header = MessageHeader::new(Some(peer_addr.into()), None);
+
+        Ok((copied_bytes, message_header))
     }
 
-    fn sendto(
+    fn sendmsg(
         &self,
-        buf: &[u8],
-        remote: Option<SocketAddr>,
+        io_vecs: &[IoVec],
+        message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
+        // TODO: Deal with flags
         debug_assert!(flags.is_all_supported());
 
-        let remote_endpoint = match remote {
+        let MessageHeader {
+            addr,
+            control_message,
+        } = message_header;
+
+        let remote_endpoint = match addr {
             Some(remote_addr) => {
                 let endpoint = remote_addr.try_into()?;
                 self.try_bind_empheral(&endpoint)?;
@@ -294,15 +343,20 @@ impl Socket for RawSocket {
             })?,
         };
 
+        if control_message.is_some() {
+            // TODO: Support sending control message
+            warn!("sending control message is not supported");
+        }
+
+        let buf = copy_message_from_user(io_vecs);
+
         // TODO: Block if the send buffer is full
-        let sent_bytes = self.try_sendto(buf, &remote_endpoint, flags)?;
-        poll_ifaces();
-        Ok(sent_bytes)
+        self.try_send(&buf, &remote_endpoint, flags)
     }
 }
 
 impl Observer<()> for RawSocket {
-    fn on_events(&self, events: &()) {
+    fn on_events(&self, _events: &()) {
         self.update_io_events();
     }
 }
